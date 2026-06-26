@@ -59,6 +59,8 @@ SERVER_TYPES = (
     'mamba',
     'qwen_gdn2',
     'qwen_gdn2_nocache',
+    'qwen_gdn_original',
+    'qwen_gdn_original_nocache',
 )
 
 
@@ -218,6 +220,36 @@ def get_llm(tokens_to_generate):
     elif args.server_type == 'qwen_gdn2_nocache':
         from model_wrappers import QwenGDN2ModelWrapper
         llm = QwenGDN2ModelWrapper(
+            name_or_path=args.model_name_or_path,
+            do_sample=args.temperature > 0,
+            repetition_penalty=1,
+            temperature=args.temperature,
+            top_k=args.top_k,
+            top_p=args.top_p,
+            stop=args.stop_words,
+            max_new_tokens=tokens_to_generate,
+            use_chat_template=True,
+            use_cache=False,
+        )
+
+    elif args.server_type == 'qwen_gdn_original':
+        from model_wrappers import QwenOriginalModelWrapper
+        llm = QwenOriginalModelWrapper(
+            name_or_path=args.model_name_or_path,
+            do_sample=args.temperature > 0,
+            repetition_penalty=1,
+            temperature=args.temperature,
+            top_k=args.top_k,
+            top_p=args.top_p,
+            stop=args.stop_words,
+            max_new_tokens=tokens_to_generate,
+            use_chat_template=True,
+            use_cache=True,
+        )
+
+    elif args.server_type == 'qwen_gdn_original_nocache':
+        from model_wrappers import QwenOriginalModelWrapper
+        llm = QwenOriginalModelWrapper(
             name_or_path=args.model_name_or_path,
             do_sample=args.temperature > 0,
             repetition_penalty=1,

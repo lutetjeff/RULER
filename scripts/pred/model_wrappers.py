@@ -261,3 +261,142 @@ class QwenGDN2ModelWrapper:
 
             results.append({"text": [text]})
         return results
+
+
+class QwenOriginalModelWrapper:
+    """RULER wrapper for the original-GDN Qwen3.5 model (FLA GatedDeltaNet)."""
+
+    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
+        import json
+        import sys
+        from pathlib import Path
+
+        from safetensors.torch import load_file
+        from transformers import AutoTokenizer
+
+        sys.path.insert(0, "/workspace/gdn2-experiment/src")
+        from qwen_gdn2_original import Qwen3_5OriginalModel, load_weights_into_qwen3_5_original
+
+        base_model_dir = Path("/workspace/gdn2-experiment/models/Qwen3.5-0.8B")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            base_model_dir, trust_remote_code=True
+        )
+
+        self.device = torch.device("cuda")
+
+        with open(base_model_dir / "model.safetensors.index.json") as f:
+            index = json.load(f)
+        weights = {}
+        for fn in sorted(set(index["weight_map"].values())):
+            weights.update(load_file(base_model_dir / fn))
+
+        cfg = {
+            "vocab_size": 248320,
+            "context_length": 262144,
+            "emb_dim": 1024,
+            "n_heads": 8,
+            "n_layers": 24,
+            "hidden_dim": 3584,
+            "head_dim": 256,
+            "qk_norm": True,
+            "n_kv_groups": 2,
+            "rope_base": 10000000.0,
+            "partial_rotary_factor": 0.25,
+            "rms_norm_eps": 1e-6,
+            "linear_conv_kernel_dim": 4,
+            "linear_key_head_dim": 128,
+            "linear_value_head_dim": 128,
+            "linear_num_key_heads": 16,
+            "linear_num_value_heads": 16,
+            "dtype": torch.bfloat16,
+            "layer_types": [
+                "linear_attention", "linear_attention", "linear_attention", "full_attention",
+                "linear_attention", "linear_attention", "linear_attention", "full_attention",
+                "linear_attention", "linear_attention", "linear_attention", "full_attention",
+                "linear_attention", "linear_attention", "linear_attention", "full_attention",
+                "linear_attention", "linear_attention", "linear_attention", "full_attention",
+                "linear_attention", "linear_attention", "linear_attention", "full_attention",
+            ],
+        }
+        self.model = Qwen3_5OriginalModel(cfg)
+        load_weights_into_qwen3_5_original(self.model, weights)
+
+        ckpt_path = Path(name_or_path)
+        if (ckpt_path / "model.pt").exists():
+            ckpt_weights = torch.load(
+                ckpt_path / "model.pt", map_location="cpu", weights_only=True
+            )
+            sample_key = next(iter(ckpt_weights.keys()))
+            if sample_key.startswith(("trf_blocks.", "tok_emb.")):
+                # Native-format checkpoint may still use fused QKV/conv names
+                # (in_proj_qkv / conv1d) from the old hand-ported layer. Convert
+                # those to the split FLA names so load_state_dict succeeds.
+                from qwen_gdn2_original.original_model import (
+                    _convert_native_gdn_checkpoint_to_fla,
+                )
+                ckpt_weights = _convert_native_gdn_checkpoint_to_fla(
+                    ckpt_weights, self.model.cfg
+                )
+                missing, unexpected = self.model.load_state_dict(
+                    ckpt_weights, strict=False
+                )
+                if missing:
+                    print(f"Warning: missing keys when loading checkpoint: {missing}")
+                if unexpected:
+                    print(f"Warning: unexpected keys: {unexpected[:10]}")
+            else:
+                weights.update(ckpt_weights)
+                load_weights_into_qwen3_5_original(self.model, weights)
+
+        self.model.to(device=self.device, dtype=torch.bfloat16)
+        self.model.eval()
+
+        self.generation_kwargs = generation_kwargs
+        self.stop = self.generation_kwargs.pop("stop")
+        self.max_new_tokens = self.generation_kwargs.pop("max_new_tokens")
+        self.use_chat_template = self.generation_kwargs.pop("use_chat_template", True)
+        self.use_cache = self.generation_kwargs.pop("use_cache", False)
+
+    def __call__(self, prompt: str, **kwargs) -> dict:
+        return self.process_batch([prompt], **kwargs)[0]
+
+    def process_batch(self, prompts: List[str], **kwargs) -> List[dict]:
+        results = []
+        for prompt in prompts:
+            if self.tokenizer.chat_template is not None and getattr(self, "use_chat_template", True):
+                messages = [{"role": "user", "content": prompt}]
+                templated = self.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            else:
+                templated = prompt
+            inputs = self.tokenizer(templated, return_tensors="pt", padding=False)
+            input_ids = inputs["input_ids"].to(self.device)
+            with torch.no_grad():
+                output_ids = self.model.generate(
+                    input_ids,
+                    max_new_tokens=self.max_new_tokens,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    temperature=0.0,
+                    use_cache=self.use_cache,
+                )
+            text = self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
+
+            tokenized_prompt = self.tokenizer(templated, return_tensors="pt")
+            prompt_decoded = self.tokenizer.decode(
+                tokenized_prompt.input_ids[0], skip_special_tokens=True
+            )
+            if text.startswith(prompt_decoded):
+                text = text[len(prompt_decoded):]
+
+            if "<think>" in text and "</think>" in text:
+                text = text.split("</think>")[-1]
+
+            if self.stop is not None:
+                for s in self.stop:
+                    text = text.split(s)[0]
+
+            results.append({"text": [text]})
+        return results

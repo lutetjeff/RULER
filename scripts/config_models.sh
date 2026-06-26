@@ -143,6 +143,16 @@ MODEL_SELECT() {
             MODEL_TEMPLATE_TYPE="base"
             MODEL_FRAMEWORK="qwen_gdn2_nocache"
             ;;
+        qwen-gdn-original-full-51)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_full_gdn/checkpoint-51"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn_original"
+            ;;
+        qwen-gdn-original-full-51-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_full_gdn/checkpoint-51"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn_original_nocache"
+            ;;
     esac
 
 
