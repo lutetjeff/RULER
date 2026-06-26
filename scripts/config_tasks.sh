@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-NUM_SAMPLES=500
+NUM_SAMPLES=100
 REMOVE_NEWLINE_TAB=false
 STOP_WORDS=""
 
@@ -38,9 +38,4 @@ synthetic=(
     "niah_multikey_3"
     "niah_multivalue"
     "niah_multiquery"
-    "vt"
-    "cwe"
-    "fwe"
-    "qa_1"
-    "qa_2"
 )

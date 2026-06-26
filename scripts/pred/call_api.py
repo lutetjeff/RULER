@@ -42,7 +42,12 @@ import time
 from tqdm import tqdm
 from pathlib import Path
 import traceback
-from nemo.collections.asr.parts.utils.manifest_utils import read_manifest
+
+
+def read_manifest(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
 
 SERVER_TYPES = (
     'trtllm',
@@ -52,6 +57,8 @@ SERVER_TYPES = (
     'gemini',
     'hf',
     'mamba',
+    'qwen_gdn2',
+    'qwen_gdn2_nocache',
 )
 
 
@@ -91,7 +98,7 @@ parser.add_argument("--batch_size", type=int, default=1)
 
 args = parser.parse_args()
 args.stop_words = list(filter(None, args.stop_words.split(',')))
-if args.server_type == 'hf' or args.server_type == 'gemini':
+if args.server_type == 'hf' or args.server_type == 'gemini' or args.server_type.startswith('qwen_gdn2'):
     args.threads = 1
 
 
@@ -193,6 +200,36 @@ def get_llm(tokens_to_generate):
             max_new_tokens=tokens_to_generate,
         )
         
+    elif args.server_type == 'qwen_gdn2':
+        from model_wrappers import QwenGDN2ModelWrapper
+        llm = QwenGDN2ModelWrapper(
+            name_or_path=args.model_name_or_path,
+            do_sample=args.temperature > 0,
+            repetition_penalty=1,
+            temperature=args.temperature,
+            top_k=args.top_k,
+            top_p=args.top_p,
+            stop=args.stop_words,
+            max_new_tokens=tokens_to_generate,
+            use_chat_template=True,
+            use_cache=True,
+        )
+
+    elif args.server_type == 'qwen_gdn2_nocache':
+        from model_wrappers import QwenGDN2ModelWrapper
+        llm = QwenGDN2ModelWrapper(
+            name_or_path=args.model_name_or_path,
+            do_sample=args.temperature > 0,
+            repetition_penalty=1,
+            temperature=args.temperature,
+            top_k=args.top_k,
+            top_p=args.top_p,
+            stop=args.stop_words,
+            max_new_tokens=tokens_to_generate,
+            use_chat_template=True,
+            use_cache=False,
+        )
+
     else:
         raise RuntimeError(f'Unsupported server type {args.server_type}')
 

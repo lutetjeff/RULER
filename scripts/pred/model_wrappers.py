@@ -59,6 +59,15 @@ class HuggingFaceModel:
 
     def process_batch(self, prompts: List[str], **kwargs) -> List[dict]:
         if self.pipeline is None:
+            if self.tokenizer.chat_template is not None:
+                prompts = [
+                    self.tokenizer.apply_chat_template(
+                        [{"role": "user", "content": p}],
+                        tokenize=False,
+                        add_generation_prompt=True,
+                    )
+                    for p in prompts
+                ]
             inputs = self.tokenizer(prompts, return_tensors="pt", padding=True).to(self.model.device)
             generated_ids = self.model.generate(
                 **inputs,
@@ -84,6 +93,10 @@ class HuggingFaceModel:
                 prompt = self.tokenizer.decode(tokenized_prompt.input_ids[0], skip_special_tokens=True)
             if text.startswith(prompt):
                 text = text[len(prompt):]
+
+            # Strip Qwen3.5 thinking blocks if present.
+            if "<think>" in text and "</think>" in text:
+                text = text.split("</think>")[-1]
 
             if self.stop is not None:
                 for s in self.stop:
@@ -130,3 +143,121 @@ class MambaModel:
     def process_batch(self, prompts: List[str], **kwargs) -> List[dict]:
         # FIXME: naive implementation
         return [self.__call__(prompt, **kwargs) for prompt in prompts]
+
+
+class QwenGDN2ModelWrapper:
+    """RULER wrapper for the custom GDN2-swapped Qwen3.5 model."""
+
+    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
+        import json
+        import sys
+        from pathlib import Path
+
+        from safetensors.torch import load_file
+        from transformers import AutoTokenizer
+
+        sys.path.insert(0, "/workspace/gdn2-experiment/src")
+        from qwen_gdn2 import (
+            QWEN3_5_CONFIG,
+            Qwen3_5GDN2Model,
+            load_weights_into_qwen3_5_gdn2,
+        )
+
+        base_model_dir = Path("/workspace/gdn2-experiment/models/Qwen3.5-0.8B")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            base_model_dir, trust_remote_code=True
+        )
+
+        self.device = torch.device("cuda")
+        self.model = Qwen3_5GDN2Model(QWEN3_5_CONFIG)
+
+        with open(base_model_dir / "model.safetensors.index.json") as f:
+            index = json.load(f)
+        weights = {}
+        for fn in sorted(set(index["weight_map"].values())):
+            weights.update(load_file(base_model_dir / fn))
+
+        ckpt_path = Path(name_or_path)
+        has_ckpt = (ckpt_path / "model.pt").exists()
+
+        load_weights_into_qwen3_5_gdn2(self.model, weights)
+
+        if has_ckpt:
+            ckpt_weights = torch.load(
+                ckpt_path / "model.pt",
+                map_location="cpu",
+                weights_only=True,
+            )
+            # SFT checkpoints are saved in the model's native state-dict format
+            # (keys like "trf_blocks.*" / "tok_emb.*"). These do not overlap with
+            # the HF-style keys consumed by load_weights_into_qwen3_5_gdn2, so we
+            # load them directly. If the checkpoint instead uses HF keys, fall
+            # back to the merge path for backward compatibility.
+            sample_key = next(iter(ckpt_weights.keys()))
+            if sample_key.startswith(("trf_blocks.", "tok_emb.")):
+                missing, unexpected = self.model.load_state_dict(
+                    ckpt_weights, strict=False
+                )
+                if missing:
+                    print(f"Warning: missing keys when loading checkpoint: {missing}")
+                if unexpected:
+                    print(
+                        f"Warning: unexpected keys when loading checkpoint: "
+                        f"{unexpected[:10]}"
+                    )
+            else:
+                weights.update(ckpt_weights)
+                load_weights_into_qwen3_5_gdn2(self.model, weights)
+        self.model.to(device=self.device, dtype=torch.bfloat16)
+        self.model.eval()
+
+        self.generation_kwargs = generation_kwargs
+        self.stop = self.generation_kwargs.pop("stop")
+        self.max_new_tokens = self.generation_kwargs.pop("max_new_tokens")
+        self.use_chat_template = self.generation_kwargs.pop("use_chat_template", True)
+        self.use_cache = self.generation_kwargs.pop("use_cache", False)
+
+    def __call__(self, prompt: str, **kwargs) -> dict:
+        return self.process_batch([prompt], **kwargs)[0]
+
+    def process_batch(self, prompts: List[str], **kwargs) -> List[dict]:
+        results = []
+        for prompt in prompts:
+            if self.tokenizer.chat_template is not None and getattr(self, "use_chat_template", True):
+                messages = [{"role": "user", "content": prompt}]
+                templated = self.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            else:
+                templated = prompt
+            inputs = self.tokenizer(templated, return_tensors="pt", padding=False)
+            input_ids = inputs["input_ids"].to(self.device)
+            with torch.no_grad():
+                output_ids = self.model.generate(
+                    input_ids,
+                    max_new_tokens=self.max_new_tokens,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    temperature=0.0,
+                    use_cache=self.use_cache,
+                )
+            text = self.tokenizer.decode(output_ids[0], skip_special_tokens=True)
+
+            tokenized_prompt = self.tokenizer(templated, return_tensors="pt")
+            prompt_decoded = self.tokenizer.decode(
+                tokenized_prompt.input_ids[0], skip_special_tokens=True
+            )
+            if text.startswith(prompt_decoded):
+                text = text[len(prompt_decoded):]
+
+            # Strip Qwen3.5 thinking blocks and keep only the final answer.
+            if "<think>" in text and "</think>" in text:
+                text = text.split("</think>")[-1]
+
+            if self.stop is not None:
+                for s in self.stop:
+                    text = text.split(s)[0]
+
+            results.append({"text": [text]})
+        return results

@@ -17,11 +17,6 @@ TOP_P="1.0"
 TOP_K="32"
 SEQ_LENGTHS=(
     131072
-    65536
-    32768
-    16384
-    8192
-    4096
 )
 
 MODEL_SELECT() {
@@ -82,6 +77,71 @@ MODEL_SELECT() {
             TOKENIZER_PATH=$MODEL_PATH
             TOKENIZER_TYPE="gemini"
             GEMINI_API_KEY=""
+            ;;
+        qwen-gdn2-base)
+            MODEL_PATH="/workspace/gdn2-experiment/models/Qwen3.5-0.8B"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2"
+            ;;
+        qwen-gdn2-base-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/models/Qwen3.5-0.8B"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2_nocache"
+            ;;
+        qwen-gdn2-gate-101)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_gate_only/checkpoint-101"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2"
+            ;;
+        qwen-gdn2-gate-101-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_gate_only/checkpoint-101"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2_nocache"
+            ;;
+        qwen-gdn2-full-51)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_full/checkpoint-51"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2"
+            ;;
+        qwen-gdn2-full-51-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_full/checkpoint-51"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2_nocache"
+            ;;
+        qwen35-0.8b-hf)
+            MODEL_PATH="/workspace/gdn2-experiment/models/Qwen3.5-0.8B"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="hf"
+            ;;
+        qwen-gdn2-gate-25-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_gate_only/checkpoint-25"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2_nocache"
+            ;;
+        qwen-gdn2-gate-50-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_gate_only/checkpoint-50"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2_nocache"
+            ;;
+        qwen-gdn2-gate-75-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_gate_only/checkpoint-75"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2_nocache"
+            ;;
+        qwen-gdn2-gate-101-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_gate_only/checkpoint-101"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2_nocache"
+            ;;
+        qwen-gdn2-full-25-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_full/checkpoint-25"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2_nocache"
+            ;;
+        qwen-gdn2-full-51-nocache)
+            MODEL_PATH="/workspace/gdn2-experiment/outputs/sft_full/checkpoint-51"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="qwen_gdn2_nocache"
             ;;
     esac
 
